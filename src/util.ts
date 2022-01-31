@@ -407,7 +407,7 @@ function relativeIfPossible(rootURL: string, targetURL: string) {
  * Compute the URL of a source given the the source root, the source's
  * URL, and the source map's URL.
  */
-export function computeSourceURL(sourceRoot: string, sourceURL: string, sourceMapURL: string): string {
+export function computeSourceURL(sourceRoot: string|null, sourceURL: string, sourceMapURL: string): string {
   // The source map spec states that "sourceRoot" and "sources" entries are to be appended. While
   // that is a little vague, implementations have generally interpreted that as joining the
   // URLs with a `/` between then, assuming the "sourceRoot" doesn't already end with one.

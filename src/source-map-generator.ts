@@ -1,14 +1,22 @@
-/* -*- Mode: js; js-indent-level: 2; -*- */
-/*
+/**
+ * @license
  * Copyright 2011 Mozilla Foundation and contributors
  * Licensed under the New BSD license. See LICENSE or:
  * http://opensource.org/licenses/BSD-3-Clause
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
-const base64VLQ = require("./base64-vlq");
-const util = require("./util");
-const ArraySet = require("./array-set").ArraySet;
-const MappingList = require("./mapping-list").MappingList;
+import * as base64VLQ from "./base64-vlq";
+import * as util from "./util";
+import {ArraySet} from "./array-set";
+import {MappingList} from "./mapping-list";
+import type {SourceMapConsumer} from './source-map-consumer';
+
+interface SourceMapGeneratorOptions {
+  file?: string|null;
+  sourceRoot?: string|null;
+  skipValidation?: boolean;
+}
 
 /**
  * An instance of the SourceMapGenerator represents a source map which is
@@ -18,11 +26,16 @@ const MappingList = require("./mapping-list").MappingList;
  *   - file: The filename of the generated source.
  *   - sourceRoot: A root for all relative URLs in this source map.
  */
-class SourceMapGenerator {
-  constructor(aArgs) {
-    if (!aArgs) {
-      aArgs = {};
-    }
+export class SourceMapGenerator {
+  private _file: string|null;
+  private _sourceRoot: string|null;
+  private _skipValidation: boolean;
+  private _sources: ArraySet;
+  private _names: ArraySet;
+  private _mappings: MappingList;
+  private _sourcesContents: unknown;
+
+  constructor(aArgs: SourceMapGeneratorOptions = {}) {
     this._file = util.getArg(aArgs, "file", null);
     this._sourceRoot = util.getArg(aArgs, "sourceRoot", null);
     this._skipValidation = util.getArg(aArgs, "skipValidation", false);
@@ -37,7 +50,7 @@ class SourceMapGenerator {
    *
    * @param aSourceMapConsumer The SourceMap.
    */
-  static fromSourceMap(aSourceMapConsumer) {
+  static fromSourceMap(aSourceMapConsumer: SourceMapConsumer) {
     const sourceRoot = aSourceMapConsumer.sourceRoot;
     const generator = new SourceMapGenerator({
       file: aSourceMapConsumer.file,
@@ -433,7 +446,8 @@ class SourceMapGenerator {
   toString() {
     return JSON.stringify(this.toJSON());
   }
-}
 
-SourceMapGenerator.prototype._version = 3;
-exports.SourceMapGenerator = SourceMapGenerator;
+  get _version() {
+    return 3;
+  }
+}

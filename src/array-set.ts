@@ -38,7 +38,7 @@ export class ArraySet {
   /**
    * Add the given string to this set.
    */
-  add(aStr: string, aAllowDuplicates: boolean) {
+  add(aStr: string, aAllowDuplicates: boolean): void {
     const isDuplicate = this.has(aStr);
     const idx = this._array.length;
     if (!isDuplicate || aAllowDuplicates) {

@@ -13,7 +13,7 @@ const intToCharMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345
 /**
  * Encode an integer in the range of 0 to 63 to a single base 64 digit.
  */
-export function encode(number: number) {
+export function encode(number: number): string {
   if (0 <= number && number < intToCharMap.length) {
     return intToCharMap[number];
   }

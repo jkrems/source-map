@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "lib": ["dom", "es2015"],
-    "outDir": "build",
+    "outDir": "lib",
+    "module": "commonjs",
+    "isolatedModules": true,
+    "target": "ES2021",
     "types": ["node"],
     "strict": true
   },

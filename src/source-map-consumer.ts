@@ -14,31 +14,81 @@ import wasm from "./wasm";
 
 const INTERNAL = Symbol("smcInternal");
 
-type SourceMap = any;
+const SOURCE_MAP_VERSION = 3;
+
+interface SourceMapV3 {
+  version: typeof SOURCE_MAP_VERSION;
+  file?: string|null;
+  sources: string[];
+  names?: string[];
+  sourceRoot?: string|null;
+  sourcesContent?: string[];
+  mappings: string;
+  sections?: Array<{offset: {line: number; column: number}, map: SourceMapV3}>;
+}
+
+type SourceMap = string|SourceMapV3;
 
 interface InitOptions {
   'lib/mappings.wasm'?: string|ArrayBuffer;
 }
 
-class SourceMapConsumer {
-  constructor(aSourceMap: SourceMap, aSourceMapURL: string) {
-    // If the constructor was called by super(), just return Promise<this>.
-    // Yes, this is a hack to retain the pre-existing API of the base-class
-    // constructor also being an async factory function.
-    if (aSourceMap == INTERNAL) {
-      // @ts-ignore
-      return Promise.resolve(this);
-    }
+interface ConsumerCallback {
+  (consumer: SourceMapConsumer): unknown;
+}
 
-    return _factory(aSourceMap, aSourceMapURL);
+interface MappingCallback {
+  (): unknown;
+}
+
+interface SourcePosition {
+  source: string;
+  line: number;
+  column: number;
+}
+
+interface GeneratedPosition {
+  line: number;
+  column: number;
+}
+
+enum SourceMappingOrder {
+  GENERATED_ORDER = 1,
+  ORIGINAL_ORDER = 2,
+}
+
+enum SourcePositionBias {
+  GREATEST_LOWER_BOUND = 1,
+  LEAST_UPPER_BOUND = 2,
+}
+
+export class SourceMapConsumer {
+  sourceRoot: string|null;
+  file: string|null;
+
+  private _sourceMapURL: string;
+
+  constructor(sourceMap: SourceMapV3, sourceMapHref: string) {
+    this._sourceMapURL = sourceMapHref;
+
+    this.file = sourceMap.file ?? null;
+    this.sourceRoot = sourceMap.sourceRoot ?? null;
+
+    const {version} = sourceMap;
+
+    // Once again, Sass deviates from the spec and supplies the version as a
+    // string rather than a number, so we use loose equality checking here.
+    if (version != SOURCE_MAP_VERSION) {
+      throw new Error("Unsupported version: " + version);
+    }
   }
 
   static initialize(opts: InitOptions) {
     initializeWasm(opts["lib/mappings.wasm"]!);
   }
 
-  static fromSourceMap(aSourceMap: SourceMap, aSourceMapURL: string) {
-    return _factoryBSM(aSourceMap, aSourceMapURL);
+  static fromSourceMap(sourceMap: SourceMapV3, sourceMapHref: string) {
+    return _factoryBSM(sourceMap, sourceMapHref);
   }
 
   /**
@@ -71,8 +121,8 @@ class SourceMapConsumer {
    * console.log(xSquared);
    * ```
    */
-  static async with(rawSourceMap, sourceMapUrl, f) {
-    const consumer = await new SourceMapConsumer(rawSourceMap, sourceMapUrl);
+  static async with(rawSourceMap: any, sourceMapUrl: string, f: ConsumerCallback) {
+    const consumer = await SourceMapConsumer.fromSourceMap(rawSourceMap, sourceMapUrl);
     try {
       return await f(consumer);
     } finally {
@@ -96,7 +146,7 @@ class SourceMapConsumer {
    *        order or the original's source/line/column order, respectively. Defaults to
    *        `SourceMapConsumer.GENERATED_ORDER`.
    */
-  eachMapping(aCallback, aContext, aOrder) {
+  eachMapping(aCallback: MappingCallback, aContext: unknown, aOrder: SourceMappingOrder) {
     throw new Error("Subclasses must implement eachMapping");
   }
 
@@ -122,26 +172,37 @@ class SourceMapConsumer {
    *   - column: The column number in the generated source, or null.
    *    The column number is 0-based.
    */
-  allGeneratedPositionsFor(aArgs) {
+  allGeneratedPositionsFor(aArgs: SourcePosition): GeneratedPosition[] {
     throw new Error("Subclasses must implement allGeneratedPositionsFor");
   }
 
   destroy() {
     throw new Error("Subclasses must implement destroy");
   }
+
+  /**
+   * The version of the source mapping spec that we are consuming.
+   */
+  get _version(): number {
+    return 3;
+  }
+
+  static get GENERATED_ORDER(): SourceMappingOrder {
+    return SourceMappingOrder.GENERATED_ORDER;
+  }
+
+  static get ORIGINAL_ORDER(): SourceMappingOrder {
+    return SourceMappingOrder.ORIGINAL_ORDER;
+  }
+
+  static get GREATEST_LOWER_BOUND(): SourcePositionBias {
+    return SourcePositionBias.GREATEST_LOWER_BOUND;
+  }
+
+  static get LEAST_UPPER_BOUND(): SourcePositionBias {
+    return SourcePositionBias.LEAST_UPPER_BOUND;
+  }
 }
-
-/**
- * The version of the source mapping spec that we are consuming.
- */
-SourceMapConsumer.prototype._version = 3;
-SourceMapConsumer.GENERATED_ORDER = 1;
-SourceMapConsumer.ORIGINAL_ORDER = 2;
-
-SourceMapConsumer.GREATEST_LOWER_BOUND = 1;
-SourceMapConsumer.LEAST_UPPER_BOUND = 2;
-
-exports.SourceMapConsumer = SourceMapConsumer;
 
 /**
  * A BasicSourceMapConsumer instance represents a parsed source map which we can
@@ -177,7 +238,7 @@ exports.SourceMapConsumer = SourceMapConsumer;
  *
  * [0]: https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit?pli=1#
  */
-class BasicSourceMapConsumer extends SourceMapConsumer {
+export class BasicSourceMapConsumer extends SourceMapConsumer {
   constructor(aSourceMap: SourceMap, aSourceMapURL: string) {
     return super(INTERNAL).then(that => {
       let sourceMap = aSourceMap;
@@ -440,6 +501,9 @@ class BasicSourceMapConsumer extends SourceMapConsumer {
   /**
    * Compute the last column for each generated mapping. The last column is
    * inclusive.
+   * 
+   * TODO(jankrems): Would it be easier to understand if this wasn't a side-effect
+   * and instead there's a dedicated allGeneratedColumnSpansFor() method?
    */
   computeColumnSpans() {
     if (this._computedColumnSpans) {
@@ -674,9 +738,6 @@ class BasicSourceMapConsumer extends SourceMapConsumer {
   }
 }
 
-BasicSourceMapConsumer.prototype.consumer = SourceMapConsumer;
-exports.BasicSourceMapConsumer = BasicSourceMapConsumer;
-
 /**
  * An IndexedSourceMapConsumer instance represents a parsed source map which
  * we can query for information. It differs from BasicSourceMapConsumer in
@@ -726,7 +787,7 @@ exports.BasicSourceMapConsumer = BasicSourceMapConsumer;
  *
  * [0]: https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit#heading=h.535es3xeprgt
  */
-class IndexedSourceMapConsumer extends SourceMapConsumer {
+export class IndexedSourceMapConsumer extends SourceMapConsumer {
   constructor(aSourceMap, aSourceMapURL) {
     return super(INTERNAL).then(that => {
       let sourceMap = aSourceMap;
@@ -1049,13 +1110,12 @@ class IndexedSourceMapConsumer extends SourceMapConsumer {
     }
   }
 }
-exports.IndexedSourceMapConsumer = IndexedSourceMapConsumer;
 
 /*
  * Cheat to get around inter-twingled classes.  `factory()` can be at the end
  * where it has access to non-hoisted classes, but it gets hoisted itself.
  */
-function _factory(aSourceMap, aSourceMapURL): SourceMap {
+function _factory(aSourceMap: any, aSourceMapURL: any): SourceMap {
   let sourceMap = aSourceMap;
   if (typeof aSourceMap === "string") {
     sourceMap = util.parseSourceMapInput(aSourceMap);
@@ -1068,6 +1128,6 @@ function _factory(aSourceMap, aSourceMapURL): SourceMap {
   return Promise.resolve(consumer);
 }
 
-function _factoryBSM(aSourceMap, aSourceMapURL) {
+function _factoryBSM(aSourceMap: any, aSourceMapURL: any) {
   return BasicSourceMapConsumer.fromSourceMap(aSourceMap, aSourceMapURL);
 }
